@@ -219,8 +219,8 @@ export default function HomePage() {
                   </p>
                 </div>
                 <div className="text-xs text-muted-foreground space-y-1 text-left bg-warm-100/50 rounded-lg p-3">
-                  <p>✓ R$ 225 na reserva</p>
-                  <p>✓ R$ 225 antes da sessão</p>
+                  <p>✓ R$ 100 na reserva</p>
+                  <p>✓ R$ 350 antes da sessão</p>
                 </div>
                 <Link href="/booking" className="block">
                   <Button className="w-full bg-copper-600 hover:bg-copper-700">

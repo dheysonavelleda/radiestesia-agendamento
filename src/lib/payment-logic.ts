@@ -2,8 +2,8 @@ import { addHours, isBefore, subHours } from "date-fns";
 
 // Price constants
 export const PIX_TOTAL = 450;
-export const PIX_FIRST_PAYMENT = 150; // Signal
-export const PIX_SECOND_PAYMENT = 300; // Remainder
+export const PIX_FIRST_PAYMENT = 100; // Signal
+export const PIX_SECOND_PAYMENT = 350; // Remainder
 export const CARD_TOTAL = 500;
 export const MAX_INSTALLMENTS = 4;
 export const CANCEL_REFUND_HOURS = 12;
