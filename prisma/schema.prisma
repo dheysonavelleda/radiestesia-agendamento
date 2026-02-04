@@ -1,0 +1,238 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============ ENUMS ============
+
+enum Role {
+  CLIENT
+  ADMIN
+}
+
+enum AppointmentStatus {
+  PENDING     // aguardando pagamento
+  CONFIRMED   // pago e confirmado
+  COMPLETED   // sessão realizada
+  CANCELLED   // cancelado
+  NO_SHOW     // não compareceu
+}
+
+enum PaymentMethod {
+  PIX
+  CARD
+}
+
+enum PaymentStatus {
+  PENDING       // Nada pago ainda
+  PARTIAL_PAID  // PIX: Pagou R$150, falta R$300
+  PAID          // Tudo pago (R$450 ou R$500)
+  FAILED        // Falhou
+  REFUNDED      // Reembolsado
+  FORFEITED     // Perdeu o valor (cancelou tarde ou não pagou 2ª parte)
+}
+
+// ============ AUTH (NextAuth) ============
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============ USUÁRIOS ============
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  phone         String?
+  image         String?
+  role          Role      @default(CLIENT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointments Appointment[]
+  payments     Payment[]
+  accounts     Account[]
+  sessions     Session[]
+
+  @@map("users")
+}
+
+// ============ SERVIÇO ============
+
+model Service {
+  id          String  @id @default(cuid())
+  name        String  @default("Sessão de Radiestesia Terapêutica")
+  description String?
+  duration    Int     @default(120) // 2 horas em minutos
+  pricePix    Float   @default(450.00)
+  priceCard   Float   @default(500.00)
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointments Appointment[]
+
+  @@map("services")
+}
+
+// ============ DISPONIBILIDADE MANUAL ============
+
+model Availability {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date // data específica
+  startTime String   // "09:00"
+  endTime   String   // "17:00"
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("availability")
+}
+
+// ============ AGENDAMENTOS ============
+
+model Appointment {
+  id              String            @id @default(cuid())
+  userId          String
+  serviceId       String
+  date            DateTime          @db.Date // data da sessão
+  startTime       DateTime          // hora início
+  endTime         DateTime          // hora fim (startTime + 2h)
+  status          AppointmentStatus @default(PENDING)
+  paymentMethod   PaymentMethod?    // PIX ou CARD
+  meetLink        String?           // Link do Google Meet
+  notes           String?           // notas do cliente
+  adminNotes      String?           // notas privadas da Joana
+  rescheduleCount Int               @default(0) // contador de remarcações (max 2)
+  cancelledAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id])
+  service Service @relation(fields: [serviceId], references: [id])
+  payment Payment?
+
+  @@map("appointments")
+}
+
+// ============ PAGAMENTOS (2 ETAPAS PIX) ============
+
+model Payment {
+  id            String @id @default(cuid())
+  appointmentId String @unique
+  userId        String
+
+  // Valores totais
+  totalAmount     Float // R$450 (PIX) ou R$500 (Cartão)
+  paidAmount      Float @default(0) // Quanto já foi pago
+  remainingAmount Float // Quanto falta pagar
+
+  // Método e status geral
+  paymentMethod PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  installments  Int           @default(1) // 1 a 4x (apenas cartão)
+  currency      String        @default("BRL")
+
+  // 1ª PARCELA (PIX: R$100) ou PAGAMENTO ÚNICO (Cartão: R$500)
+  firstPaymentAmount Float?
+  firstPaymentDate   DateTime?
+  firstPaymentMPId   String? // ID Mercado Pago
+  firstPaymentStatus String? // Status do MP
+
+  // 2ª PARCELA (apenas PIX: R$350) - TOTAL: R$450
+  secondPaymentAmount Float?
+  secondPaymentDate   DateTime?
+  secondPaymentMPId   String?
+  secondPaymentStatus String?
+  secondPaymentDue    DateTime? // Deadline: 1h antes da sessão
+
+  // Mercado Pago IDs
+  mercadoPagoPreferenceId String?
+  mercadoPagoPaymentId    String?
+
+  // PIX específico
+  pixQrCode       String? @db.Text // QR Code PIX (texto)
+  pixQrCodeBase64 String? @db.Text // QR Code em base64 (imagem)
+
+  // Reembolso
+  refundedAmount Float   @default(0)
+  refundedAt     DateTime?
+  refundReason   String?
+  refundStatus   String? // pending, approved, rejected
+
+  // Termos de aceite
+  termsAccepted   Boolean   @default(false)
+  termsAcceptedAt DateTime?
+  termsIpAddress  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id])
+  user        User        @relation(fields: [userId], references: [id])
+
+  @@map("payments")
+}
+
+// ============ BLOQUEIOS MANUAIS ============
+
+model BlockedSlot {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  startTime String
+  endTime   String
+  reason    String? // "Férias", "Compromisso", etc
+
+  createdAt DateTime @default(now())
+
+  @@map("blocked_slots")
+}
